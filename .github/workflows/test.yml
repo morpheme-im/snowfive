@@ -1,0 +1,176 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Native · ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Test
+        run: go test ./...
+      - name: Test with race detector
+        run: go test -race ./...
+      - name: Test portable backend
+        run: go test -tags=purego ./...
+      - name: Test no-assembly backend
+        run: go test -tags=noasm ./...
+
+  amd64-profiles:
+    name: amd64 profile · ${{ matrix.runner }} · ${{ matrix.profile.mask }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-latest
+          - windows-latest
+        profile:
+          - mask: "111"
+            disabled: ""
+            godebug: ""
+          - mask: "110"
+            disabled: avx2
+            godebug: cpu.avx2=off
+          - mask: "101"
+            disabled: ssse3
+            godebug: cpu.ssse3=off
+          - mask: "100"
+            disabled: ssse3,avx2
+            godebug: cpu.ssse3=off,cpu.avx2=off
+          - mask: "011"
+            disabled: aes
+            godebug: cpu.aes=off
+          - mask: "010"
+            disabled: aes,avx2
+            godebug: cpu.aes=off,cpu.avx2=off
+          - mask: "001"
+            disabled: aes,ssse3
+            godebug: cpu.aes=off,cpu.ssse3=off
+          - mask: "000"
+            disabled: aes,ssse3,avx2
+            godebug: cpu.aes=off,cpu.ssse3=off,cpu.avx2=off
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Test runtime profile
+        env:
+          GODEBUG: ${{ matrix.profile.godebug }}
+          SNOWFIVE_EXPECT_PROFILE: ${{ matrix.profile.mask }}
+          SNOWFIVE_EXPECT_DISABLED: ${{ matrix.profile.disabled }}
+        run: go test -count=1 ./...
+
+  arm64-profiles:
+    name: arm64 profile · macos-latest · ${{ matrix.profile.mask }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        profile:
+          - mask: "111"
+            disabled: ""
+            godebug: ""
+          - mask: "110"
+            disabled: sha3
+            godebug: cpu.sha3=off
+          - mask: "101"
+            disabled: aes
+            godebug: cpu.aes=off
+          - mask: "100"
+            disabled: aes,sha3
+            godebug: cpu.aes=off,cpu.sha3=off
+          - mask: "011"
+            disabled: asimd
+            godebug: cpu.asimd=off
+          - mask: "010"
+            disabled: asimd,sha3
+            godebug: cpu.asimd=off,cpu.sha3=off
+          - mask: "001"
+            disabled: asimd,aes
+            godebug: cpu.asimd=off,cpu.aes=off
+          - mask: "000"
+            disabled: asimd,aes,sha3
+            godebug: cpu.asimd=off,cpu.aes=off,cpu.sha3=off
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Test runtime profile
+        env:
+          GODEBUG: ${{ matrix.profile.godebug }}
+          SNOWFIVE_EXPECT_PROFILE: ${{ matrix.profile.mask }}
+          SNOWFIVE_EXPECT_DISABLED: ${{ matrix.profile.disabled }}
+        run: go test -count=1 ./...
+
+  foreign-builds:
+    name: Build only · ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: linux
+            goarch: "386"
+          - goos: linux
+            goarch: s390x
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Compile test binaries without executing them
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${{ matrix.goos }}-${{ matrix.goarch }}"
+          go test -c -o "${RUNNER_TEMP}/snowfive-${target}.test" .
+          go test -c -tags=purego -o "${RUNNER_TEMP}/snowfive-${target}-purego.test" .
+          go test -c -tags=noasm -o "${RUNNER_TEMP}/snowfive-${target}-noasm.test" .
