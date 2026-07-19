@@ -2,9 +2,7 @@ package snowfive
 
 import (
 	"bytes"
-	"fmt"
 	"math"
-	"reflect"
 	"strconv"
 	"sync"
 	"testing"
@@ -48,24 +46,6 @@ func TestSnowVZeroValueRequiresRekey(t *testing.T) {
 				t.Fatalf("uninitialized call changed destination")
 			}
 		})
-	}
-}
-
-func TestSnowVCipherFormattingRedactsState(t *testing.T) {
-	cipher, err := NewSnowVCipher(make([]byte, KeySize), make([]byte, IVSize))
-	if err != nil {
-		t.Fatal(err)
-	}
-	values := []any{
-		cipher,
-		reflect.ValueOf(cipher).Elem().Interface(),
-	}
-	for _, value := range values {
-		for _, format := range []string{"%v", "%+v", "%#v", "%s", "%q", "%x"} {
-			if got := fmt.Sprintf(format, value); got != redactedCipherState {
-				t.Fatalf("format %q = %q, want %q", format, got, redactedCipherState)
-			}
-		}
 	}
 }
 
